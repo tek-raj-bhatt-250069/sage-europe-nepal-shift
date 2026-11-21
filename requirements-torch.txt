@@ -1,0 +1,5 @@
+# PyTorch for scripts/06_extract_features.py. On Colab use the preinstalled CUDA build
+# (features_run.json records its version). CPU-only machines:
+#   pip install --index-url https://download.pytorch.org/whl/cpu -r requirements-torch.txt
+torch==2.15.0
+torchvision==0.29.2

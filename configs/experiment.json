@@ -1,0 +1,81 @@
+{
+  "_notes": [
+    "Settings for the experiments.",
+    "The label space lives in src/sage_shift/labelspace.py; `six_classes` repeats it so a test can check that both agree.",
+    "`expected_counts` come from the data audit and the official HyperKvasir split file; scripts/03_build_manifests.py stops if the files disagree.",
+    "`paper_table6` is the SAGE paper's Table 6 (arXiv:2606.22144v2, p8): weighted F1 on each model's own test set and on SAGE.",
+    "Manifests, features and per-image predictions are never committed: on Colab pass a private Google Drive folder as --out-dir; locally they go to outputs/ (git-ignored).",
+    "`preprocessing` values were chosen from aggregate pixel statistics of the SAGE frames before any features were extracted (scripts/05_check_fov.py)."
+  ],
+  "six_classes": ["esophagitis", "fundus-retroflexion", "polyp", "pylorus-normal", "rectum-retroflexion", "z-line-normal"],
+  "expected_counts": {
+    "sage_images": 1300,
+    "sage_six_class": {
+      "train": {"images": 314, "patients": 145},
+      "test": {"images": 158, "patients": 62}
+    },
+    "hk_labelled_images": 10662,
+    "hk_classes": 23,
+    "hk_mapped_images": 4777,
+    "hk_mapped_images_by_fold2": {"0": 2387, "1": 2390}
+  },
+  "paper_table6": {
+    "hyperkvasir": {
+      "resnet50": {"own_test": 0.8707, "sage": 0.1164},
+      "densenet121": {"own_test": 0.8382, "sage": 0.1691}
+    },
+    "gastrovision": {
+      "resnet50": {"own_test": 0.5738, "sage": 0.1265},
+      "densenet121": {"own_test": 0.5650, "sage": 0.2431}
+    }
+  },
+  "seeds": {
+    "global": 0,
+    "bootstrap": 1,
+    "rq3_patient_draws": 0
+  },
+  "bootstrap": {"n_resamples": 2000, "unit": "patient", "ci": 0.95, "paired": true},
+  "image": {"size": 224, "resize": "squash whole frame (as the SAGE authors)", "normalisation": "imagenet"},
+  "variants": ["raw", "fov", "colour", "fov_colour"],
+  "preprocessing": {
+    "fov": {"threshold": 20, "open_radius_fraction": 0.01, "work_size": 512},
+    "fov_limits": {"min_area": 0.3, "max_area": 0.97, "min_solidity": 0.9, "clean_solidity": 0.97,
+                   "layout_tolerance": 0.02, "layout_min_frames": 5, "jitter": 3, "min_inside": 0.97},
+    "colour": {"method": "Reinhard et al. (2001) mean and SD transfer", "space": "CIELAB (D65 white, sRGB primaries)",
+               "statistics": "pixels inside the field only; pixels outside are unchanged",
+               "reference": "mean, over HyperKvasir six-class frames without field flags, of each frame's in-field Lab mean and SD (fov crop at 224 px)"},
+    "contact_sheet": {"random_frames": 20, "max_flagged": 60, "seed": 0}
+  },
+  "backbones": [
+    {"name": "resnet50_imagenet", "source": "torchvision ResNet50_Weights.IMAGENET1K_V1", "feature_dim": 2048},
+    {"name": "resnet50_dino_imagenet", "source": "torch.hub facebookresearch/dino:main dino_resnet50", "feature_dim": 2048},
+    {"name": "resnet50_gastronet_dino", "source": "GastroNet-5M DINOv1 ResNet-50 (portal access; CC BY-NC-ND 4.0, frozen use only)", "feature_dim": 2048, "optional": true},
+    {"name": "dinov2_vitb14", "source": "torch.hub facebookresearch/dinov2 dinov2_vitb14", "feature": "class token + mean patch token", "feature_dim": 1536}
+  ],
+  "probe": {
+    "model": "multinomial logistic regression (L2, lbfgs)",
+    "C_grid": [0.001, 0.01, 0.1, 1, 10],
+    "class_weight": "balanced",
+    "max_iter": 5000,
+    "standardise_features": true,
+    "c_selection": {"hyperkvasir": "official 2-fold split", "sage_ceiling": "5-fold patient-grouped CV on SAGE train"}
+  },
+  "metrics": {
+    "primary": "macro_f1",
+    "key_secondary": "macro_ovr_auroc_multilabel_truth",
+    "paper_comparable": "weighted_f1",
+    "other": ["balanced_accuracy", "per_class_f1", "per_class_auroc", "per_class_ap", "confusion_matrix"]
+  },
+  "rq3": {
+    "k_patients": [0, 5, 10, 20, 40, 145],
+    "draws_per_k": 10,
+    "regimes": ["hyperkvasir_plus_k", "sage_only"],
+    "target": "smallest k reaching 90% of the SAGE-only ceiling (macro-F1); report HyperKvasir + k above the ceiling as a finding",
+    "target_fraction_of_ceiling": 0.9
+  },
+  "paper_recipe_rerun": {
+    "faithful": {"lr": 0.01, "optimizer": "Adam", "scheduler": "StepLR(step_size=5, gamma=0.5)", "epochs": 100, "batch_size": 32, "split": "random 80/20 stratified, random_state=0", "checkpoint": "best weighted F1 on that test split"},
+    "adjusted": {"lr": 0.0001, "optimizer": "Adam", "epochs": 30, "batch_size": 32, "split": "official fold 0 train / fold 1 selection"},
+    "collapse_criterion": {"top_class_share_of_predictions": 0.8}
+  }
+}

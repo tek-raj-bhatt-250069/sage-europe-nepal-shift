@@ -1,0 +1,56 @@
+{
+  "_notes": [
+    "Reference values for scripts/01_audit_sage.py.",
+    "`expected` and `paper_figure3_counts` are the SAGE paper's figures (Oli et al., MELBA 2026) as quoted in the thesis brief. They are compared with the files and never used to change them.",
+    "`class_suffixes` and `label_groups` are analysis aids chosen for this audit; they are not part of the dataset.",
+    "`paper_tolerance_pct_points` is how far a coverage percentage may sit from the paper's rounded figure before it is listed as a discrepancy."
+  ],
+  "seed": 42,
+  "expected": {
+    "n_images": 1300,
+    "n_patients": 290,
+    "n_visits": 371,
+    "image_width": 768,
+    "image_height": 576,
+    "image_format": "JPEG",
+    "nominal_train_pct": 70,
+    "n_vqa_pairs": 14276,
+    "n_vqa_questions_paper": 12,
+    "patients_with_demographics_pct_paper": 56,
+    "images_with_device_pct_paper": 17
+  },
+  "paper_tolerance_pct_points": 3,
+  "thresholds": {
+    "min_test_images": 10,
+    "min_test_patients": 5
+  },
+  "paper_figure3_counts": {
+    "stomach": 372,
+    "pylorus": 258,
+    "esophagus": 232,
+    "instrument": 180,
+    "polyp": 164,
+    "colon": 161,
+    "inflammation": 142,
+    "gej": 80,
+    "duodenum": 53,
+    "z-line": 51,
+    "fundus": 49,
+    "esophagitis": 40,
+    "blood": 40,
+    "ulcer": 39,
+    "foreign-body": 38,
+    "growth": 37,
+    "rectum": 30,
+    "diverticulum": 23
+  },
+  "class_suffixes": ["-normal", "-retroflexion"],
+  "label_groups": {
+    "anatomy": ["colon", "duodenum", "esophagus", "fundus", "gej", "pylorus", "rectum", "stomach", "z-line"],
+    "pathology": ["blood", "diverticulum", "esophagitis", "growth", "inflammation", "polyp", "ulcer"],
+    "other": ["foreign-body", "instrument"]
+  },
+  "device_unknown_values": ["unknown"],
+  "visibility_question_prefix": "What is the visibility in the image?",
+  "visibility_answer_stem": "The visibility in the image is"
+}

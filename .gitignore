@@ -1,0 +1,24 @@
+# Dataset and generated outputs: never committed (see data/ETHICS.md)
+data/
+outputs/
+# HyperKvasir and other external datasets (downloaded separately; never committed)
+external/
+
+# Local notes and study material (not part of this repository)
+docs/
+scripts/02_select_study_images.py
+
+# Environments and secrets
+venv/
+.env
+*.env
+.synapseConfig
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Notebooks / OS
+.ipynb_checkpoints/
+.DS_Store
