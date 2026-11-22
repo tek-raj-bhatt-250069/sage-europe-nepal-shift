@@ -45,6 +45,7 @@ The token is read only from the environment; see `.env.example`.
 | `python scripts/04_constant_baselines.py` | Scores of constant predictors on the SAGE six-class test set, compared with the paper's Table 6. Writes to `outputs/baselines/`. |
 | `python scripts/05_check_fov.py` | Field-of-view detection, field layouts, quality flags and the Reinhard colour reference (from HyperKvasir), plus contact sheets for a visual check. Writes `preprocess_reference.json` (aggregate) and per-image quality tables to `outputs/preprocess/`. CPU, no network. On Colab, run with `--no-sheets`. |
 | `python scripts/06_extract_features.py` | Frozen-backbone features for the raw, fov, colour and fov_colour variants. Writes `<dataset>/<backbone>/<variant>.npz` and a run record to `outputs/features/` or `--out-dir`. Meant for a GPU (e.g. Google Colab); downloads pretrained weights on first use. `--random-weights --limit 8` is an offline smoke test. |
+| `python scripts/07_rq1_probes.py` | Logistic-regression probes on the features: HyperKvasir-trained (transfer) and SAGE-trained (ceiling), scored on the SAGE six-class test set, with paired patient-level bootstrap CIs for the gap. Writes aggregate tables to `outputs/rq1/` and per-image predictions to `outputs/rq1/predictions/`. CPU. |
 
 Tests (standard library only; the feature tests are skipped without PyTorch): `python -m unittest discover tests`.
 
