@@ -77,8 +77,8 @@
     "target_fraction_of_ceiling": 0.9
   },
   "paper_recipe_rerun": {
-    "faithful": {"lr": 0.01, "optimizer": "Adam", "scheduler": "StepLR(step_size=5, gamma=0.5)", "epochs": 100, "batch_size": 32, "split": "random 80/20 stratified, random_state=0", "checkpoint": "best weighted F1 on that test split"},
-    "adjusted": {"lr": 0.0001, "optimizer": "Adam", "epochs": 30, "batch_size": 32, "split": "official fold 0 train / fold 1 selection"},
+    "faithful": {"lr": 0.01, "optimizer": "Adam", "step_size": 5, "gamma": 0.5, "epochs": 100, "batch_size": 32, "split": "random 80/20 stratified, random_state=0", "checkpoint": "best weighted F1 on that test split"},
+    "adjusted": {"lr": 0.0001, "optimizer": "Adam", "step_size": 5, "gamma": 0.5, "epochs": 30, "batch_size": 32, "split": "official fold 0 train / fold 1 selection", "checkpoint": "best weighted F1 on fold 1"},
     "collapse_criterion": {"top_class_share_of_predictions": 0.8}
   }
 }

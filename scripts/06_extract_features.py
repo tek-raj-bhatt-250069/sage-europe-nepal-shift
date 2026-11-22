@@ -12,17 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
-import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-import PIL
 import torch
-import torchvision
 
 from sage_shift.backbones import BACKBONES, load_backbone
 from sage_shift.data import read_json
@@ -30,6 +26,7 @@ from sage_shift.features import FrameDataset, extract, save_features
 from sage_shift.frames import hk_frames, sage_frames
 from sage_shift.outdir import check_out_dir
 from sage_shift.preprocess import FIELD_VARIANTS, COLOUR_VARIANTS, PreprocessReference, check_variants
+from sage_shift.runinfo import environment, git_state
 
 ROOT = Path(__file__).resolve().parents[1]
 HK_DIR = ROOT / "external" / "hyperkvasir"
@@ -62,28 +59,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def git_state() -> dict[str, Any]:
-    """Commit and cleanliness of the repository the script runs from."""
-    def run(*command: str) -> str | None:
-        try:
-            done = subprocess.run(["git", "-C", str(ROOT), *command], capture_output=True, text=True, check=True)
-            return done.stdout.strip()
-        except (OSError, subprocess.CalledProcessError):
-            return None
-    status = run("status", "--porcelain", "--untracked-files=no")
-    return {"commit": run("rev-parse", "HEAD"), "uncommitted_changes": None if status is None else bool(status)}
-
-
-def environment(device: torch.device) -> dict[str, Any]:
-    info: dict[str, Any] = {"python": platform.python_version(), "torch": torch.__version__,
-                            "torchvision": torchvision.__version__, "numpy": np.__version__, "pillow": PIL.__version__,
-                            "device": str(device)}
-    if device.type == "cuda":
-        info.update(gpu=torch.cuda.get_device_name(device), cuda=torch.version.cuda,
-                    cudnn=torch.backends.cudnn.version())
-    return info
-
-
 def main() -> int:
     args = parse_args()
     cfg = read_json(args.config)
@@ -110,7 +85,7 @@ def main() -> int:
     started = time.time()
     record: dict[str, Any] = {"started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                               "args": {key: str(value) for key, value in vars(args).items()},
-                              "environment": environment(device), "git": git_state(), "backbones": {}, "outputs": []}
+                              "environment": environment(device), "git": git_state(ROOT), "backbones": {}, "outputs": []}
     print(f"Device: {device}; datasets: {datasets}; variants: {list(variants)}; backbones: {names}")
     backbones = []
     for name in names:
