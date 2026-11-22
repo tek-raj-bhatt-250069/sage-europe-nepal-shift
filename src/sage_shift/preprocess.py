@@ -20,7 +20,8 @@ import numpy as np
 from PIL import Image
 
 from sage_shift.colour import ColourReference, reinhard
-from sage_shift.fov import FieldChoice, FovLimits, FovParams, Layout, apply_field, choose_field, detect_field
+from sage_shift.fov import (FieldChoice, FovLimits, FovParams, Layout, apply_field, choose_field, detect_field,
+                            reduce_frame, remove_windows)
 
 VARIANTS: tuple[str, ...] = ("raw", "fov", "colour", "fov_colour")
 FIELD_VARIANTS = frozenset({"fov", "colour", "fov_colour"})
@@ -36,6 +37,7 @@ class PreprocessReference:
     size: int
     layouts: Mapping[str, tuple[Layout, ...]] = field(default_factory=dict)  # per dataset
     colour: ColourReference | None = None
+    fallback: Mapping[str, bool] = field(default_factory=dict)  # per dataset; missing means on
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +45,7 @@ class PreprocessReference:
                     "work_size": self.params.work_size},
             "fov_limits": dict(self.limits.__dict__),
             "size": self.size,
+            "fallback": dict(self.fallback),
             "colour_reference": None if self.colour is None else self.colour.to_dict(),
             "layouts": {name: [layout.to_dict() for layout in items] for name, items in self.layouts.items()},
         }
@@ -52,7 +55,8 @@ class PreprocessReference:
         colour = data.get("colour_reference")
         return cls(FovParams.from_config(data["fov"]), FovLimits.from_config(data["fov_limits"]), int(data["size"]),
                    {name: tuple(Layout.from_dict(item) for item in items) for name, items in data["layouts"].items()},
-                   None if colour is None else ColourReference.from_dict(colour))
+                   None if colour is None else ColourReference.from_dict(colour),
+                   {name: bool(value) for name, value in data["fallback"].items()})
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps(self.to_dict(), indent=1) + "\n", encoding="utf-8")
@@ -89,8 +93,11 @@ def resize_mask(mask: np.ndarray, size: int) -> np.ndarray:
 
 
 def frame_field(rgb: np.ndarray, reference: PreprocessReference, dataset: str) -> FieldChoice:
-    """Detect the field of a frame and check it against the dataset's layouts."""
-    return choose_field(detect_field(rgb, reference.params), reference.layouts.get(dataset, ()), reference.limits)
+    """Detect the field of a frame, check it against the dataset's layouts and take overlay windows out."""
+    detected = detect_field(rgb, reference.params)
+    choice = choose_field(detected, reference.layouts.get(dataset, ()), reference.limits,
+                          fallback=reference.fallback.get(dataset, True))
+    return remove_windows(choice, reduce_frame(rgb, detected.factor), reference.limits)
 
 
 def make_variants(rgb: np.ndarray, choice: FieldChoice | None, size: int,

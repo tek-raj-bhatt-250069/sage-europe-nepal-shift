@@ -5,7 +5,8 @@
     "`expected_counts` come from the data audit and the official HyperKvasir split file; scripts/03_build_manifests.py stops if the files disagree.",
     "`paper_table6` is the SAGE paper's Table 6 (arXiv:2606.22144v2, p8): weighted F1 on each model's own test set and on SAGE.",
     "Manifests, features and per-image predictions are never committed: on Colab pass a private Google Drive folder as --out-dir; locally they go to outputs/ (git-ignored).",
-    "`preprocessing` values were chosen from aggregate pixel statistics of the SAGE frames before any features were extracted (scripts/05_check_fov.py)."
+    "`preprocessing` values were chosen from aggregate pixel statistics of the SAGE frames before any features were extracted (scripts/05_check_fov.py).",
+    "The window settings and the per-dataset `fallback` were added after checking the HyperKvasir sheets, before any fov or colour features were extracted. Green windows (the ScopeGuide thumbnail) cover 3-13% of the frame in HyperKvasir and at most 1.1% in SAGE. HyperKvasir notches come from the black picture-in-picture window of its older processor, which must stay outside the field, so HyperKvasir frames keep their own detection."
   ],
   "six_classes": ["esophagitis", "fundus-retroflexion", "polyp", "pylorus-normal", "rectum-retroflexion", "z-line-normal"],
   "expected_counts": {
@@ -40,7 +41,9 @@
   "preprocessing": {
     "fov": {"threshold": 20, "open_radius_fraction": 0.01, "work_size": 512},
     "fov_limits": {"min_area": 0.3, "max_area": 0.97, "min_solidity": 0.9, "clean_solidity": 0.97,
-                   "layout_tolerance": 0.02, "layout_min_frames": 5, "jitter": 3, "min_inside": 0.97},
+                   "layout_tolerance": 0.02, "layout_min_frames": 5, "jitter": 3, "min_inside": 0.97,
+                   "window_min_area": 0.02, "window_min_fill": 0.5, "window_pad": 2},
+    "fallback": {"sage": true, "hk": false},
     "colour": {"method": "Reinhard et al. (2001) mean and SD transfer", "space": "CIELAB (D65 white, sRGB primaries)",
                "statistics": "pixels inside the field only; pixels outside are unchanged",
                "reference": "mean, over HyperKvasir six-class frames without field flags, of each frame's in-field Lab mean and SD (fov crop at 224 px)"},

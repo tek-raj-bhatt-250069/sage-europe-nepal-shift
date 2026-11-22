@@ -7,20 +7,12 @@ from typing import Any
 import numpy as np
 
 from sage_shift.colour import srgb_to_lab
-from sage_shift.fov import FovParams, FovResult, apply_field, detect_field, reduce_frame
+from sage_shift.fov import FovParams, FovResult, apply_field, detect_field, green_mask, reduce_frame
 from sage_shift.preprocess import PreprocessReference, frame_field, load_rgb, resize_mask, resize_rgb
 
-GREEN_MARGIN = 25  # G must exceed R and B by this much
-GREEN_MIN = 80
 PROBLEM_FLAGS = ("small", "no_border", "not_convex", "beyond_layout", "no_layout")
 
 _REFERENCE: PreprocessReference | None = None
-
-
-def green_mask(rgb: np.ndarray) -> np.ndarray:
-    """Green-dominant pixels (like the ScopeGuide thumbnail in HyperKvasir)."""
-    r, g, b = (rgb[..., k].astype(np.int16) for k in range(3))
-    return (g > r + GREEN_MARGIN) & (g > b + GREEN_MARGIN) & (g > GREEN_MIN)
 
 
 def detect_task(task: tuple[str, FovParams]) -> dict[str, Any]:

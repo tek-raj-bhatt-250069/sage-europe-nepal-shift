@@ -7,8 +7,10 @@ import unittest
 import numpy as np
 
 from sage_shift.fov import (FovLimits, FovParams, Layout, apply_field, build_layouts, choose_field, cluster_boxes,
-                            detect_field, solidity)
+                            detect_field, green_mask, reduce_frame, remove_windows, solidity, window_mask)
 from synthetic import HEIGHT, WIDTH, frame, octagon
+
+GREEN = (20, 170, 130)  # ScopeGuide-like teal
 
 class DetectionTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -104,6 +106,51 @@ class LayoutTests(unittest.TestCase):
         choice = choose_field(detected, self.layouts, self.limits)
         self.assertEqual(choice.layout, "")
         self.assertEqual(choice.flags, ())
+
+    def test_fallback_can_be_switched_off(self) -> None:
+        notched = octagon(36, 14, 732, 564, 60)
+        notched[250:564, 36:380] = False  # black picture-in-picture window in the lower-left corner
+        detected = detect_field(frame(notched, seed=52))
+        choice = choose_field(detected, self.layouts, self.limits, fallback=False)
+        self.assertIn("not_convex", choice.flags)
+        self.assertIn("no_fallback", choice.flags)
+        self.assertNotIn("fallback", choice.flags)
+        self.assertIs(choice.field, detected)
+
+
+class WindowTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.limits = FovLimits()
+        self.truth = octagon(64, 22, 702, 556, 60)
+
+    def choice_for(self, rgb: np.ndarray):
+        detected = detect_field(rgb)
+        choice = choose_field(detected, (), self.limits)
+        return detected, remove_windows(choice, reduce_frame(rgb, detected.factor), self.limits)
+
+    def test_window_touching_the_picture_is_removed(self) -> None:
+        rgb = frame(self.truth)
+        rgb[400:570, 20:250] = GREEN
+        detected, choice = self.choice_for(rgb)
+        self.assertTrue(detected.full_mask()[450:550, 100:200].all())  # merged into the detected field
+        self.assertIn("window", choice.flags)
+        mask = choice.field.full_mask()
+        self.assertFalse((green_mask(rgb) & mask).any())
+        self.assertTrue(mask[200:300, 300:400].all())  # the rest of the picture stays
+        self.assertLess(choice.field.area_fraction, detected.area_fraction)
+
+    def test_small_or_ragged_green_areas_stay(self) -> None:
+        rgb = frame(self.truth)
+        rgb[250:270, 300:320] = GREEN  # small blob (bile-like)
+        detected, choice = self.choice_for(rgb)
+        self.assertNotIn("window", choice.flags)
+        self.assertIs(choice.field, detected)
+        ring = np.zeros((288, 384, 3), dtype=np.uint8)
+        ring[20:220, 50:300] = GREEN
+        ring[26:214, 56:294] = 0  # large but hollow: fills about a tenth of its box
+        self.assertFalse(window_mask(ring, self.limits).any())
+        ring[26:214, 56:294] = GREEN
+        self.assertTrue(window_mask(ring, self.limits)[20:220, 50:300].all())
 
 
 if __name__ == "__main__":

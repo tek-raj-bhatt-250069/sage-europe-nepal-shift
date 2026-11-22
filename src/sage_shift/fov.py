@@ -3,14 +3,15 @@
 The endoscopic image sits on a dark border that can hold text, redaction boxes or a ScopeGuide
 thumbnail. We threshold the brightest channel, clean up with an opening, keep the largest region
 and fill its holes. Frames where this fails (too small or badly notched) fall back to the field of
-their layout, i.e. the typical field of frames with the same size and position.
+their layout, i.e. the typical field of frames with the same size and position. Large green
+overlay windows (the ScopeGuide thumbnail) that touch the picture are taken out of the field.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from typing import Any
 
@@ -20,6 +21,8 @@ from scipy import ndimage as ndi
 from scipy.spatial import ConvexHull, QhullError
 
 BBox = tuple[int, int, int, int]  # left, top, right, bottom (full size, right/bottom exclusive)
+GREEN_MARGIN = 25  # G must exceed R and B by this much
+GREEN_MIN = 80
 
 
 @dataclass(frozen=True)
@@ -47,12 +50,16 @@ class FovLimits:
     layout_min_frames: int = 5
     jitter: int = 3                 # reduced pixels
     min_inside: float = 0.97
+    window_min_area: float = 0.02   # green windows at least this share of the frame are removed
+    window_min_fill: float = 0.5    # ... if they fill at least this share of their box
+    window_pad: int = 2             # reduced pixels added around a window
 
     @classmethod
     def from_config(cls, cfg: Mapping[str, Any]) -> FovLimits:
         return cls(float(cfg["min_area"]), float(cfg["max_area"]), float(cfg["min_solidity"]),
                    float(cfg["clean_solidity"]), float(cfg["layout_tolerance"]), int(cfg["layout_min_frames"]),
-                   int(cfg["jitter"]), float(cfg["min_inside"]))
+                   int(cfg["jitter"]), float(cfg["min_inside"]), float(cfg["window_min_area"]),
+                   float(cfg["window_min_fill"]), int(cfg["window_pad"]))
 
 
 @dataclass(frozen=True)
@@ -297,8 +304,9 @@ def score_layouts(detected: FovResult, layouts: Sequence[Layout], jitter: int) -
     return scores
 
 
-def choose_field(detected: FovResult, layouts: Sequence[Layout], limits: FovLimits) -> FieldChoice:
-    """Use the frame's own detection, or its layout if the detection failed."""
+def choose_field(detected: FovResult, layouts: Sequence[Layout], limits: FovLimits,
+                 fallback: bool = True) -> FieldChoice:
+    """Use the frame's own detection, or its layout if the detection failed and `fallback` is on."""
     flags = []
     failed = False
     if detected.area_fraction < limits.min_area:
@@ -316,16 +324,45 @@ def choose_field(detected: FovResult, layouts: Sequence[Layout], limits: FovLimi
         flags.append("beyond_layout")  # no layout contains this field
     name, agreement, inside = ("", float("nan"), float("nan")) if best is None else (
         best.layout.name, best.agreement, best.inside)
-    if failed and best is not None:
+    if failed and best is not None and fallback:
         flags.append("fallback")
         field = make_result(best.layout.mask, best.layout.factor, best.layout.shape, bbox=best.layout.bbox,
                             solidity_value=detected.solidity)
         return FieldChoice(field, name, agreement, inside, tuple(flags))
     if failed:
-        flags.append("no_layout")
+        flags.append("no_layout" if best is None else "no_fallback")
     if not detected.mask.any():
         raise ValueError(f"no field found and no layout for frame size {detected.shape}")
     return FieldChoice(detected, name, agreement, inside, tuple(flags))
+
+
+def green_mask(rgb: np.ndarray) -> np.ndarray:
+    """Green-dominant pixels (like the ScopeGuide thumbnail in HyperKvasir)."""
+    r, g, b = (rgb[..., k].astype(np.int16) for k in range(3))
+    return (g > r + GREEN_MARGIN) & (g > b + GREEN_MARGIN) & (g > GREEN_MIN)
+
+
+def window_mask(small: np.ndarray, limits: FovLimits) -> np.ndarray:
+    """Boxes of large, solid green regions on a reduced frame, grown by `window_pad`."""
+    green = green_mask(small)
+    labels, _ = ndi.label(green, structure=np.ones((3, 3), dtype=bool))
+    sizes = np.bincount(labels.ravel())
+    out = np.zeros(green.shape, dtype=bool)
+    for index, box in enumerate(ndi.find_objects(labels), start=1):
+        box_area = (box[0].stop - box[0].start) * (box[1].stop - box[1].start)
+        if sizes[index] >= limits.window_min_area * green.size and sizes[index] >= limits.window_min_fill * box_area:
+            out[box] = True
+    return grow(out, limits.window_pad)
+
+
+def remove_windows(choice: FieldChoice, small: np.ndarray, limits: FovLimits) -> FieldChoice:
+    """Take green overlay windows that touch the picture out of the field (flag "window")."""
+    field = choice.field
+    windows = window_mask(small, limits) & field.mask
+    if not windows.any():
+        return choice
+    kept = make_result(field.mask & ~windows, field.factor, field.shape, solidity_value=field.solidity)
+    return replace(choice, field=kept, flags=(*choice.flags, "window"))
 
 
 def apply_field(rgb: np.ndarray, field: FovResult) -> tuple[np.ndarray, np.ndarray]:

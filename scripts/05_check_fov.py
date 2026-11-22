@@ -60,7 +60,12 @@ def pct(values: pd.Series | np.ndarray) -> dict[str, float]:
 def flag_counts(flags: pd.Series) -> dict[str, int]:
     """Frames carrying each flag."""
     return {flag: int(flags.str.split("|").map(lambda items, f=flag: f in items).sum())
-            for flag in (*PROBLEM_FLAGS, "fallback")}
+            for flag in (*PROBLEM_FLAGS, "fallback", "no_fallback", "window")}
+
+
+def has_flag(flags: pd.Series, flag: str) -> np.ndarray:
+    """Boolean array: frames carrying `flag`."""
+    return flags.str.split("|").map(lambda items: flag in items).to_numpy(dtype=bool)
 
 
 def dataset_summary(frames: pd.DataFrame, quality: pd.DataFrame, layouts: list, limits: FovLimits,
@@ -87,7 +92,9 @@ def dataset_summary(frames: pd.DataFrame, quality: pd.DataFrame, layouts: list, 
         "green_check": {"frames_with_green_pixels": int((quality["green_total"] > 50).sum()),
                         "frames_with_green_pixels_inside_field": int(green_inside.sum()),
                         "inside_field_by_class": {str(k): int(v) for k, v in
-                                                  frames.loc[green_inside, "class"].value_counts().items()}},
+                                                  frames.loc[green_inside, "class"].value_counts().items()},
+                        "windows_removed_by_class": {str(k): int(v) for k, v in frames.loc[
+                            has_flag(quality["flags"], "window"), "class"].value_counts().items()}},
         "field_area_percentiles": pct(quality["field_area"]),
         "lab_fov_crop": {"mean_of_image_means": [round(float(quality[f"{c}_mean"].mean()), 3) for c in LAB],
                          "mean_of_image_sds": [round(float(quality[f"{c}_sd"].mean()), 3) for c in LAB],
@@ -131,6 +138,10 @@ def write_sheets(frames: pd.DataFrame, quality: pd.DataFrame, dataset: str, refe
     per_layout = [int(rng.choice(np.flatnonzero((quality["layout"] == name).to_numpy())))
                   for name in sorted(set(quality["layout"]) - {""})]
     chosen["layouts"] = per_layout
+    windows = np.flatnonzero(has_flag(quality["flags"], "window"))
+    if len(windows) > int(cfg["max_flagged"]):
+        windows = np.sort(rng.choice(windows, size=int(cfg["max_flagged"]), replace=False))
+    chosen["windows"] = windows.tolist()
     written = []
     panels = 4 if reference.colour is not None else 2
     for kind, indices in chosen.items():
@@ -165,7 +176,8 @@ def main() -> int:
         layouts[name], _ = build_layouts(fields, limits, prefix=f"{name}-")
         clean[name] = sum(is_clean(field, limits) for field in fields)
     reference = PreprocessReference(params, limits, int(cfg["image"]["size"]),
-                                    {name: tuple(items) for name, items in layouts.items()})
+                                    {name: tuple(items) for name, items in layouts.items()},
+                                    fallback={name: bool(pre["fallback"][name]) for name in frames})
 
     with Pool(args.workers, initializer=set_reference, initargs=(reference,)) as pool:
         quality = {name: pd.DataFrame(list(pool.imap(measure_task, [(path, name) for path in table["path"]],

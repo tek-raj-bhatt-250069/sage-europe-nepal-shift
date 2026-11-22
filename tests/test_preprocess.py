@@ -11,8 +11,8 @@ import numpy as np
 from PIL import Image
 
 from sage_shift.colour import ColourReference
-from sage_shift.fieldcheck import detect_task, green_mask, has_problem, unpack_detection
-from sage_shift.fov import FovLimits, FovParams, build_layouts, detect_field
+from sage_shift.fieldcheck import detect_task, has_problem, unpack_detection
+from sage_shift.fov import FovLimits, FovParams, build_layouts, detect_field, green_mask
 from sage_shift.preprocess import (PreprocessReference, check_variants, frame_field, make_variants, resize_mask,
                                    resize_rgb)
 from sage_shift.sheets import compose, draw_field
@@ -27,7 +27,8 @@ class VariantTests(unittest.TestCase):
         self.rgb[40:52, 4:50] = 255  # text in the border
         fields = [detect_field(frame(octagon(64, 22, 702, 556, 60), seed=i)) for i in range(5)]
         layouts, _ = build_layouts(fields, FovLimits(), prefix="t-")
-        self.reference = PreprocessReference(FovParams(), FovLimits(), 224, {"sage": tuple(layouts)}, REFERENCE)
+        self.reference = PreprocessReference(FovParams(), FovLimits(), 224, {"sage": tuple(layouts)}, REFERENCE,
+                                             {"sage": True, "hk": False})
         self.choice = frame_field(self.rgb, self.reference, "sage")
 
     def test_all_variants(self) -> None:
@@ -59,6 +60,15 @@ class VariantTests(unittest.TestCase):
         self.assertEqual(loaded.limits, self.reference.limits)
         self.assertEqual(loaded.colour, REFERENCE)
         self.assertEqual(loaded.layouts["sage"], self.reference.layouts["sage"])
+        self.assertEqual(loaded.fallback, {"sage": True, "hk": False})
+
+    def test_frame_field_takes_green_windows_out(self) -> None:
+        rgb = frame(octagon(64, 22, 702, 556, 60))
+        rgb[400:570, 20:250] = (20, 170, 130)  # ScopeGuide-like window over the lower-left corner
+        choice = frame_field(rgb, self.reference, "sage")
+        self.assertIn("window", choice.flags)
+        self.assertFalse(choice.field.full_mask()[410:560, 30:240].any())
+        self.assertNotIn("window", self.choice.flags)  # plain frame: nothing removed
 
     def test_resize_mask(self) -> None:
         mask = np.zeros((576, 768), dtype=bool)
