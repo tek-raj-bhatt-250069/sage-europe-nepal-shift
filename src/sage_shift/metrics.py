@@ -33,6 +33,18 @@ def label_scores(cm: np.ndarray) -> dict[str, float | np.ndarray]:
     }
 
 
+def macro_f1_many(y_true: np.ndarray, y_pred: np.ndarray, n_classes: int, weights: np.ndarray) -> np.ndarray:
+    """Macro-F1 for many weight vectors at once (rows of `weights`), as `label_scores` computes it."""
+    pairs = np.asarray(y_true) * n_classes + np.asarray(y_pred)
+    counts = (np.asarray(weights, dtype=float) @ np.eye(n_classes * n_classes)[pairs]).reshape(-1, n_classes, n_classes)
+    tp = np.diagonal(counts, axis1=1, axis2=2)
+    support, predicted = counts.sum(axis=2), counts.sum(axis=1)
+    denom = support + predicted
+    f1 = np.divide(2 * tp, denom, out=np.zeros_like(tp), where=denom > 0)
+    present = support > 0
+    return (f1 * present).sum(axis=1) / present.sum(axis=1)
+
+
 def _tie_groups(scores: np.ndarray, *columns: np.ndarray, descending: bool = False) -> list[np.ndarray]:
     """Sum each column within groups of equal score, in score order."""
     order = np.argsort(-scores if descending else scores, kind="mergesort")

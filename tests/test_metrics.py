@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics import average_precision_score, balanced_accuracy_score, f1_score, roc_auc_score
 
 from sage_shift.bootstrap import group_weights, percentile_ci
-from sage_shift.metrics import auroc, average_precision, evaluate
+from sage_shift.metrics import auroc, average_precision, evaluate, macro_f1_many
 
 
 def sample(n: int = 80, k: int = 4, seed: int = 0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -47,6 +47,12 @@ class MetricTests(unittest.TestCase):
         out = evaluate(y, proba, np.eye(3)[y])
         self.assertAlmostEqual(out["macro_f1"], f1_score(y, proba.argmax(1), labels=[0, 1], average="macro"))
         self.assertTrue(np.isnan(out["f1"][2]) and np.isnan(out["auroc"][2]))
+
+    def test_macro_f1_many_matches_evaluate(self) -> None:
+        y, proba, truth = sample(seed=3)
+        weights = np.random.default_rng(4).integers(0, 3, size=(25, len(y))).astype(float)
+        many = macro_f1_many(y, proba.argmax(axis=1), 4, weights)
+        np.testing.assert_allclose(many, [evaluate(y, proba, truth, w)["macro_f1"] for w in weights])
 
     def test_degenerate_ranking_scores(self) -> None:
         self.assertTrue(np.isnan(auroc(np.ones(3), np.array([0.1, 0.2, 0.3]), np.ones(3))))

@@ -30,6 +30,35 @@ def fit_predict(X_train: np.ndarray, y_train: np.ndarray, X_test: np.ndarray, C:
     return proba
 
 
+def fit_predict_weighted(X_train: np.ndarray, y_train: np.ndarray, sample_weight: np.ndarray, X_test: np.ndarray,
+                         C: float, seed: int, n_classes: int, max_iter: int = 5000) -> np.ndarray:
+    """Like `fit_predict`, with explicit sample weights instead of balanced class weights."""
+    model = make_pipeline(StandardScaler(), LogisticRegression(C=C, max_iter=max_iter, random_state=seed))
+    model.fit(X_train, y_train, logisticregression__sample_weight=sample_weight)
+    proba = np.zeros((len(X_test), n_classes))
+    proba[:, model.classes_] = model.predict_proba(X_test)
+    return proba
+
+
+def balanced_weights(y: np.ndarray, source: np.ndarray, total: float | None = None) -> np.ndarray:
+    """Weights that balance classes within each source and give every source the same total.
+
+    The weights sum to `total` (default: the number of samples), so with one source they equal
+    scikit-learn's class_weight="balanced" and the C values chosen with it keep their meaning.
+    """
+    y, source = np.asarray(y), np.asarray(source)
+    total = float(len(y)) if total is None else total
+    weights = np.zeros(len(y))
+    sources = np.unique(source)
+    for s in sources:
+        in_source = source == s
+        classes = np.unique(y[in_source])
+        for c in classes:
+            members = in_source & (y == c)
+            weights[members] = total / (len(sources) * len(classes) * members.sum())
+    return weights
+
+
 def official_folds(fold: np.ndarray) -> list[Fold]:
     """Train on one official fold and validate on the other, both ways."""
     first, second = np.flatnonzero(fold == 0), np.flatnonzero(fold == 1)

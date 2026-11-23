@@ -6,7 +6,8 @@ import unittest
 
 import numpy as np
 
-from sage_shift.probes import fit_predict, grouped_folds, official_folds, select_c
+from sage_shift.probes import (balanced_weights, fit_predict, fit_predict_weighted, grouped_folds, official_folds,
+                               select_c)
 
 
 def blobs(n_per_class: int = 30, k: int = 3, dim: int = 8, spread: float = 1.0, seed: int = 0):
@@ -46,6 +47,24 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse(np.isnan(oof).any())
         same, _, _ = select_c(x, y, folds, [1.0, 0.5], seed=0, n_classes=3)  # perfectly separable: tie
         self.assertEqual(same, 0.5)  # ties go to the smaller C
+
+    def test_balanced_weights(self) -> None:
+        y = np.array([0, 0, 0, 1, 0, 1, 1, 1])
+        source = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        w = balanced_weights(y, source)
+        self.assertAlmostEqual(w.sum(), 8)
+        for s in (0, 1):
+            self.assertAlmostEqual(w[source == s].sum(), 4)  # sources weighted equally
+            for c in (0, 1):
+                self.assertAlmostEqual(w[(source == s) & (y == c)].sum(), 2)  # classes balanced within a source
+
+    def test_weighted_fit_matches_balanced_class_weights(self) -> None:
+        x, y = blobs(n_per_class=20, spread=2.0)
+        keep = np.r_[np.arange(0, 20), np.arange(20, 30), np.arange(40, 60)]  # unequal class sizes
+        x, y = x[keep], y[keep]
+        balanced = fit_predict(x, y, x, C=0.5, seed=0, n_classes=3)
+        weighted = fit_predict_weighted(x, y, balanced_weights(y, np.zeros(len(y))), x, C=0.5, seed=0, n_classes=3)
+        np.testing.assert_allclose(weighted, balanced, atol=1e-4)
 
 
 if __name__ == "__main__":
