@@ -97,24 +97,26 @@ def _set_reference(reference: PreprocessReference) -> None:
     _REFERENCE = reference
 
 
-def _fov_resized(task: tuple[str, str, int]) -> np.ndarray:
-    path, dataset, size = task
+def _field_resized(task: tuple[str, str, int, bool]) -> np.ndarray:
+    path, dataset, size, crop = task
     if _REFERENCE is None:
         raise RuntimeError("no preprocessing reference in this worker")
     rgb = load_rgb(path)
-    crop, _ = apply_field(rgb, frame_field(rgb, _REFERENCE, dataset).field)
-    return resize_rgb(crop, size)
+    field = frame_field(rgb, _REFERENCE, dataset).field
+    if crop:
+        return resize_rgb(apply_field(rgb, field)[0], size)
+    return resize_rgb(np.where(field.full_mask()[..., None], rgb, np.uint8(0)), size)
 
 
-def cache_fov_frames(paths: Sequence[str | Path], dataset: str, reference: PreprocessReference, size: int = 224,
-                     workers: int = 2) -> np.ndarray:
-    """Field-of-view crops (black outside the field), resized like the fov variant."""
-    tasks = [(str(path), dataset, size) for path in paths]
+def cache_field_frames(paths: Sequence[str | Path], dataset: str, reference: PreprocessReference, size: int = 224,
+                       workers: int = 2, crop: bool = True) -> np.ndarray:
+    """Black outside the field, then resized: cropped to the field box (the fov variant) or the whole frame."""
+    tasks = [(str(path), dataset, size, crop) for path in paths]
     if workers <= 1:
         _set_reference(reference)
-        return np.stack([_fov_resized(task) for task in tasks])
+        return np.stack([_field_resized(task) for task in tasks])
     with Pool(workers, initializer=_set_reference, initargs=(reference,)) as pool:
-        return np.stack(pool.map(_fov_resized, tasks, chunksize=16))
+        return np.stack(pool.map(_field_resized, tasks, chunksize=16))
 
 
 def make_model(pretrained: bool = True) -> nn.Module:

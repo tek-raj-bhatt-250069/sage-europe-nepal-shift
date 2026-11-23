@@ -8,10 +8,12 @@
 
 The chosen epoch is evaluated on every SAGE image. The six-class SAGE test images are also scored
 after each epoch to show how predictions develop; they are never used to choose anything. With
---reference, the chosen model is also scored on field-of-view crops of the SAGE frames (the fov
-variant of scripts/05 and 06). Outputs (history, per-image SAGE probabilities, summary) go to
---out-dir. An interrupted run resumes from its last saved state when restarted with the same
-arguments.
+--reference, SAGE is also scored as fov crops (black outside the field, cropped to the field box:
+the fov variant of scripts/05 and 06) and as masked frames (black outside the field, not cropped),
+which separates removing the border from rescaling the picture. --seed changes the training seed
+only; the faithful 80/20 split always uses the released seed. Outputs (history, per-image SAGE
+probabilities, summary) go to --out-dir. An interrupted run resumes from its last saved state when
+restarted with the same arguments.
 
     python scripts/08_paper_recipe.py --recipe faithful --out-dir <folder> --reference <preprocess_reference.json>
     python scripts/08_paper_recipe.py --recipe adjusted --out-dir <folder> --reference <preprocess_reference.json>
@@ -39,14 +41,15 @@ from sage_shift.labelspace import SIX_CLASSES
 from sage_shift.manifests import build_hk_manifest
 from sage_shift.outdir import check_out_dir
 from sage_shift.preprocess import PreprocessReference
-from sage_shift.recipe import (CachedFrames, cache_fov_frames, cache_frames, faithful_split, make_loader, make_model,
-                               predict, prediction_summary, rng_state, save_atomic, scores, seed_everything,
+from sage_shift.recipe import (CachedFrames, cache_field_frames, cache_frames, faithful_split, make_loader,
+                               make_model, predict, prediction_summary, rng_state, save_atomic, scores, seed_everything,
                                set_rng_state, test_transform, train_epoch, train_transform)
 from sage_shift.runinfo import environment, git_state
 
 ROOT = Path(__file__).resolve().parents[1]
 HK_DIR = ROOT / "external" / "hyperkvasir"
 CLASS_INDEX = {name: i for i, name in enumerate(SIX_CLASSES)}
+FIELD_INPUTS = {"fov": True, "masked": False}  # name -> crop to the field box
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,12 +60,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hk-split", type=Path, default=HK_DIR / "official_splits" / "2_fold_split.csv")
     parser.add_argument("--config", type=Path, default=ROOT / "configs" / "experiment.json")
     parser.add_argument("--reference", type=Path,
-                        help="preprocess_reference.json; also score the chosen model on fov crops of SAGE")
+                        help="preprocess_reference.json; also score SAGE as fov crops and as masked frames")
     parser.add_argument("--out-dir", type=Path, default=ROOT / "outputs" / "paper_recipe")
     parser.add_argument("--cache-dir", type=Path, default=ROOT / "outputs" / "cache",
                         help="resized frames, reused by the second recipe (session disk is fine)")
     parser.add_argument("--epochs", type=int, help="default: the config value for the recipe")
-    parser.add_argument("--seed", type=int, help="default: seeds.global in the config (0, as released)")
+    parser.add_argument("--seed", type=int, help="training seed; default seeds.global in the config (0, as released)")
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--device", default="auto", help="auto, cpu or cuda")
     parser.add_argument("--save-every", type=int, default=5, help="epochs between resume points")
@@ -73,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def hk_tables(args: argparse.Namespace, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def hk_tables(args: argparse.Namespace, split_seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Training and epoch-selection rows (file_name, rel_path, sage_class) for the recipe."""
     labels_csv = args.hk_root / "image-labels.csv"
     manifest = build_hk_manifest(args.hk_split, None, labels_csv, args.hk_root)
@@ -86,7 +89,7 @@ def hk_tables(args: argparse.Namespace, seed: int) -> tuple[pd.DataFrame, pd.Dat
     names = pd.read_csv(labels_csv, dtype=str, keep_default_na=False)["Video file"]
     names = names.map(lambda name: name if name.lower().endswith(".jpg") else f"{name}.jpg")
     ordered = mapped.loc[[name for name in names if name in mapped.index]].reset_index()
-    train, select = faithful_split(ordered["sage_class"].tolist(), seed)
+    train, select = faithful_split(ordered["sage_class"].tolist(), split_seed)
     return ordered.iloc[train].reset_index(drop=True), ordered.iloc[select].reset_index(drop=True)
 
 
@@ -122,13 +125,16 @@ def main() -> int:
         raise SystemExit("this script trains ResNet-50 and needs a GPU (use --limit for a CPU smoke test)")
     tag = f"{args.recipe}_seed{seed}" + ("_smoke" if args.limit else "")
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    if (args.out_dir / f"{tag}_summary.json").is_file() and not args.restart:
+        print(f"{tag}: already finished ({tag}_summary.json exists); skipped. Use --restart to run it again.")
+        return 0
     state_file, best_file = args.out_dir / f"{tag}_state.pt", args.out_dir / f"{tag}_best.pt"
     if args.restart:
         state_file.unlink(missing_ok=True)
         best_file.unlink(missing_ok=True)
     seed_everything(seed)
 
-    train_rows, select_rows = hk_tables(args, seed)
+    train_rows, select_rows = hk_tables(args, int(cfg["seeds"]["global"]))
     sage = sage_frames(args.data_dir)
     if args.limit:
         train_rows, select_rows = train_rows.head(args.limit), select_rows.head(args.limit)
@@ -141,14 +147,14 @@ def main() -> int:
     position = {name: i for i, name in enumerate(hk_rows["file_name"])}
     sage_images = cached("sage", sage["id"].tolist(), lambda: cache_frames(sage["path"].tolist(), size, args.workers),
                          args, size)
-    sage_fov = None
+    field_images: dict[str, np.ndarray] = {}
     if args.reference is not None:
         if not args.reference.is_file():
             raise SystemExit(f"{args.reference} not found: run scripts/05_check_fov.py first")
         reference = PreprocessReference.load(args.reference)
-        sage_fov = cached("sage_fov", sage["id"].tolist(),
-                          lambda: cache_fov_frames(sage["path"].tolist(), "sage", reference, size, args.workers),
-                          args, size)
+        for name, crop in FIELD_INPUTS.items():
+            field_images[name] = cached(f"sage_{name}", sage["id"].tolist(), lambda crop=crop: cache_field_frames(
+                sage["path"].tolist(), "sage", reference, size, args.workers, crop), args, size)
     y_train = train_rows["sage_class"].map(CLASS_INDEX).to_numpy()
     y_select = select_rows["sage_class"].map(CLASS_INDEX).to_numpy()
     test = (sage["in_six"] & (sage["split"] == "test")).to_numpy()
@@ -166,6 +172,8 @@ def main() -> int:
                               int(spec["batch_size"]), False, args.workers)
     test_loader = make_loader(CachedFrames(sage_images[test], y_test, test_transform()), int(spec["batch_size"]),
                               False, args.workers)
+    fov_test_loader = None if "fov" not in field_images else make_loader(
+        CachedFrames(field_images["fov"][test], y_test, test_transform()), int(spec["batch_size"]), False, args.workers)
 
     model = make_model(pretrained=not args.random_weights).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=float(spec["lr"]))
@@ -192,12 +200,19 @@ def main() -> int:
         if select["weighted_f1"] > best_f1:  # strict, as released
             best_f1, best_epoch = select["weighted_f1"], epoch
             save_atomic({key: value.cpu() for key, value in model.state_dict().items()}, best_file)
-        history.append({"epoch": epoch, "lr": lr, "train_loss": round(loss, 6),
-                        **{f"select_{key}": round(value, 4) for key, value in select.items()},
-                        "sage_test_macro_f1": monitor["macro_f1"], "sage_test_top_class": monitor["top_class"],
-                        "sage_test_top_share": monitor["top_class_share"], "seconds": round(time.time() - tick, 1)})
-        print(f"  epoch {epoch:3d}  lr {lr:.2e}  loss {loss:.4f}  selection wF1 {select['weighted_f1']:.4f}  "
-              f"SAGE test macro-F1 {monitor['macro_f1']:.3f}, top {monitor['top_class']} {monitor['top_class_share']:.2f}")
+        row = {"epoch": epoch, "lr": lr, "train_loss": round(loss, 6),
+               **{f"select_{key}": round(value, 4) for key, value in select.items()},
+               "sage_test_macro_f1": monitor["macro_f1"], "sage_test_top_class": monitor["top_class"],
+               "sage_test_top_share": monitor["top_class_share"]}
+        line = (f"  epoch {epoch:3d}  lr {lr:.2e}  loss {loss:.4f}  selection wF1 {select['weighted_f1']:.4f}  "
+                f"SAGE test macro-F1 {monitor['macro_f1']:.3f}, top {monitor['top_class']} {monitor['top_class_share']:.2f}")
+        if fov_test_loader is not None:
+            fov = prediction_summary(y_test, predict(model, fov_test_loader, device), collapse)
+            row.update(sage_test_fov_macro_f1=fov["macro_f1"], sage_test_fov_top_class=fov["top_class"],
+                       sage_test_fov_top_share=fov["top_class_share"])
+            line += f"  | fov macro-F1 {fov['macro_f1']:.3f}, top {fov['top_class']} {fov['top_class_share']:.2f}"
+        history.append({**row, "seconds": round(time.time() - tick, 1)})
+        print(line)
         if epoch % args.save_every == 0 or epoch == epochs:
             save_atomic({"model": model.state_dict(), "optimizer": optimizer.state_dict(),
                          "scheduler": scheduler.state_dict(), "history": history, "best_f1": best_f1,
@@ -209,14 +224,15 @@ def main() -> int:
     proba = predict(model, sage_loader, device)
     probs = pd.DataFrame(proba, columns=list(SIX_CLASSES)).assign(sample_uuid=sage["id"])[["sample_uuid", *SIX_CLASSES]]
     probs.to_csv(args.out_dir / f"{tag}_sage_probs.csv", index=False, float_format="%.6f")
-    proba_fov = None
-    if sage_fov is not None:
-        proba_fov = predict(model, make_loader(CachedFrames(sage_fov, np.zeros(len(sage), dtype=np.int64),
-                                                            test_transform()), int(spec["batch_size"]), False,
-                                               args.workers), device)
-        pd.DataFrame(proba_fov, columns=list(SIX_CLASSES)).assign(sample_uuid=sage["id"])[
-            ["sample_uuid", *SIX_CLASSES]].to_csv(args.out_dir / f"{tag}_sage_fov_probs.csv", index=False,
+    field_results: dict[str, Any] = {}
+    for name, images in field_images.items():
+        field_proba = predict(model, make_loader(CachedFrames(images, np.zeros(len(sage), dtype=np.int64),
+                                                              test_transform()), int(spec["batch_size"]), False,
+                                                 args.workers), device)
+        pd.DataFrame(field_proba, columns=list(SIX_CLASSES)).assign(sample_uuid=sage["id"])[
+            ["sample_uuid", *SIX_CLASSES]].to_csv(args.out_dir / f"{tag}_sage_{name}_probs.csv", index=False,
                                                   float_format="%.6f")
+        field_results[name] = prediction_summary(y_test, field_proba[test], collapse)
     pd.DataFrame(history).to_csv(args.out_dir / f"{tag}_history.csv", index=False)
     weights_url = ResNet50_Weights.IMAGENET1K_V1.url
     weights_path = hub_checkpoint(weights_url)
@@ -226,7 +242,7 @@ def main() -> int:
         "best_epoch": best_epoch, "best_selection_weighted_f1": round(best_f1, 4),
         "selection_at_best_epoch": next((row for row in history if row["epoch"] == best_epoch), None),
         "sage_six_class_test": prediction_summary(y_test, proba[test], collapse),
-        "sage_six_class_test_fov": None if proba_fov is None else prediction_summary(y_test, proba_fov[test], collapse),
+        **{f"sage_six_class_test_{name}": result for name, result in field_results.items()},
         "weights": {"source": "random (smoke test)"} if args.random_weights else
                    {"source": weights_url, "sha256": sha256_file(weights_path) if weights_path.is_file() else None},
         "environment": environment(device), "git": git_state(ROOT),
@@ -243,10 +259,11 @@ def main() -> int:
           f"accuracy {result['accuracy']:.4f}; top class {result['top_class']} gets {result['top_class_share']:.0%} "
           f"of predictions (collapse: {result['collapse']})")
     print(f"Predicted counts: {result['predicted_counts']}")
-    if summary["sage_six_class_test_fov"] is not None:
-        fov = summary["sage_six_class_test_fov"]
-        print(f"Same model on fov crops: weighted F1 {fov['weighted_f1']:.4f}, macro-F1 {fov['macro_f1']:.4f}; "
-              f"top class {fov['top_class']} gets {fov['top_class_share']:.0%} (collapse: {fov['collapse']})")
+    for name, label in (("fov", "fov crops"), ("masked", "masked, not cropped")):
+        if name in field_results:
+            out = field_results[name]
+            print(f"Same model on {label}: weighted F1 {out['weighted_f1']:.4f}, macro-F1 {out['macro_f1']:.4f}; "
+                  f"top class {out['top_class']} gets {out['top_class_share']:.0%} (collapse: {out['collapse']})")
     print(f"Wrote {tag}_summary.json, {tag}_history.csv and {tag}_sage_probs.csv to {args.out_dir}")
     return 0
 
