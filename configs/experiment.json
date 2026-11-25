@@ -51,7 +51,7 @@
   },
   "backbones": [
     {"name": "resnet50_imagenet", "source": "torchvision ResNet50_Weights.IMAGENET1K_V1", "feature_dim": 2048},
-    {"name": "resnet50_dino_imagenet", "source": "torch.hub facebookresearch/dino:main dino_resnet50", "feature_dim": 2048},
+    {"name": "resnet50_dino_imagenet", "source": "DINO ResNet-50 checkpoint dino_resnet50_pretrain.pth from dl.fbaipublicfiles.com (facebookresearch/dino), loaded into a torchvision ResNet-50", "feature_dim": 2048},
     {"name": "resnet50_gastronet_dino", "source": "GastroNet-5M DINOv1 ResNet-50 (portal access; CC BY-NC-ND 4.0, frozen use only)", "feature_dim": 2048, "optional": true},
     {"name": "dinov2_vitb14", "source": "torch.hub facebookresearch/dinov2 dinov2_vitb14", "feature": "class token + mean patch token", "feature_dim": 1536}
   ],
@@ -80,5 +80,31 @@
     "faithful": {"lr": 0.01, "optimizer": "Adam", "step_size": 5, "gamma": 0.5, "epochs": 100, "batch_size": 32, "split": "random 80/20 stratified, random_state=0", "checkpoint": "best weighted F1 on that test split"},
     "adjusted": {"lr": 0.0001, "optimizer": "Adam", "step_size": 5, "gamma": 0.5, "epochs": 30, "batch_size": 32, "split": "official fold 0 train / fold 1 selection", "checkpoint": "best weighted F1 on fold 1"},
     "collapse_criterion": {"top_class_share_of_predictions": 0.8}
+  },
+  "exploratory": {
+    "_notes": [
+      "Exploratory inputs, kept apart from the pre-registered `variants`; they change no pre-registered result.",
+      "grey is the ImageNet mean colour (0.485, 0.456, 0.406) rounded to 8 bits, (124, 116, 104): about 0 after ImageNet normalisation.",
+      "All inputs are resized to `image.size` with bilinear filtering, as the variants."
+    ],
+    "inputs": {
+      "masked": "black outside the field, whole frame squashed (the masked frames of the re-run)",
+      "masked_grey": "grey outside the field, whole frame squashed",
+      "fov_grey": "field box crop with grey outside the field",
+      "letterbox": "fov crop centred on a black square of side max(box height, box width), then resized (no squash)",
+      "letterbox_grey": "field box crop with grey outside the field, centred on a grey square, then resized",
+      "colour_global": "SAGE only: raw frame with one Lab transfer inside the field, lab' = (lab - SAGE mean) * (reference SD / SAGE SD) + reference mean",
+      "fov_colour_global": "SAGE only: fov crop with the same Lab transfer inside the field",
+      "sageify": "HyperKvasir only: fov crop resized into the sageify box, pasted into a black canvas of the sageify frame size, then squashed",
+      "sageify_grey": "HyperKvasir only: as sageify, with grey outside the field and a grey canvas"
+    },
+    "colour_global_statistics": "SAGE mean and SD: mean over SAGE train frames without field flags of each frame's in-field Lab mean and SD (fov crop at 224 px, as for the colour reference); written by scripts/16_colour_global_stats.py",
+    "sageify_placement": {"frame": [576, 768], "bbox": [64, 22, 702, 556], "rule": "the SAGE layout with the most frames in preprocess_reference.json (left, top, right, bottom)"},
+    "features": {"sage": ["masked", "masked_grey", "letterbox", "letterbox_grey", "fov_grey", "colour_global", "fov_colour_global"],
+                 "hk": ["sageify", "sageify_grey"]},
+    "geometry_controls": {"sage_test": ["raw", "masked", "masked_grey", "fov", "fov_grey", "letterbox", "letterbox_grey"],
+                          "hk_fold1": ["raw", "sageify", "sageify_grey"],
+                          "transform": "the re-run's test transform: resize to 224 x 224, then ImageNet normalisation",
+                          "collapse": "top class receives at least `collapse_criterion` of the predictions"}
   }
 }

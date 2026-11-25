@@ -206,15 +206,15 @@ def audit_schema(data: SageData, audit: Audit, expected: dict[str, Any]) -> None
     wanted = {key: expected[key] for key in counts}
     audit.check(
         section,
-        "image, patient and visit counts match the brief",
+        "image, patient and visit counts match the paper",
         counts == wanted,
         f"found {counts['n_images']} / {counts['n_patients']} / {counts['n_visits']}, "
         f"expected {wanted['n_images']} / {wanted['n_patients']} / {wanted['n_visits']}",
     )
     if not set(SAGE_LABELS) & set(data.classification.columns):
         audit.discrepancies.append(
-            "Label storage: the brief expected 18 label columns; classification.csv has one `labels` column "
-            "holding a stringified list per row, plus a `class` column."
+            "Label storage: the README names a `labels` column but not its format; classification.csv has no "
+            "per-label columns, and `labels` holds a stringified list per row, next to the `class` column."
         )
     if len(data.metadata) != counts["n_patients"]:
         audit.discrepancies.append(

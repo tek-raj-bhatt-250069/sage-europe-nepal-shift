@@ -62,9 +62,9 @@ def audit_text(data: SageData, audit: Audit, cfg: dict[str, Any]) -> None:
     tagged = caption_summary["captions with inline <tag> markers"]["total"]
     hallucinated = caption_summary["captions with >=1 hallucinated span"]["total"]
     audit.discrepancies.append(
-        f"Hallucination markers: the brief expected inline tags such as `<H>…</H>`; {tagged} captions contain any "
-        f"inline tag. Hallucinations are stored as `annotation` spans with a `hallucinated` flag "
-        f"({hallucinated} of {len(captions)} captions have at least one)."
+        f"Hallucination markers: the paper's Figure 1 marks hallucinations with inline tags such as `<H>…</H>`; "
+        f"{tagged} captions contain any inline tag. As the README describes, hallucinations are stored as "
+        f"`annotation` spans with a `hallucinated` flag ({hallucinated} of {len(captions)} captions have at least one)."
     )
 
     split_of = data.samples.set_index("sample_uuid")["split"]

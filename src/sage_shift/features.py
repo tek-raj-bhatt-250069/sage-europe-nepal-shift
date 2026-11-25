@@ -11,20 +11,25 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from sage_shift.backbones import IMAGENET_MEAN, IMAGENET_STD, Backbone
-from sage_shift.preprocess import FIELD_VARIANTS, PreprocessReference, check_variants, frame_field, load_rgb, make_variants
+from sage_shift.colour import ColourReference
+from sage_shift.preprocess import (NEEDS_FIELD, SAGEIFY, PreprocessReference, check_dataset, check_variants,
+                                   frame_field, load_rgb, make_variants, sage_placement)
 
 
 class FrameDataset(Dataset):
     """Returns the variants of a frame as a (V, 3, size, size) normalised tensor."""
 
     def __init__(self, paths: Sequence[str], dataset: str, variants: Sequence[str],
-                 reference: PreprocessReference | None, size: int) -> None:
+                 reference: PreprocessReference | None, size: int, sage_colour: ColourReference | None = None) -> None:
         self.paths, self.dataset, self.size = list(paths), dataset, size
         self.variants = check_variants(variants)
-        self.needs_field = bool(FIELD_VARIANTS & set(self.variants))
+        check_dataset(dataset, self.variants)
+        self.needs_field = bool(NEEDS_FIELD & set(self.variants))
         if self.needs_field and (reference is None or not reference.layouts.get(dataset)):
             raise ValueError(f"variants {self.variants} need preprocess_reference.json with {dataset} layouts")
         self.reference = reference
+        self.sage_colour = sage_colour  # SAGE train Lab statistics for the colour_global inputs
+        self.placement = sage_placement(reference) if SAGEIFY & set(self.variants) else None
         self.mean = torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1)
         self.std = torch.tensor(IMAGENET_STD).view(1, 3, 1, 1)
 
@@ -35,7 +40,7 @@ class FrameDataset(Dataset):
         rgb = load_rgb(self.paths[index])
         choice = frame_field(rgb, self.reference, self.dataset) if self.needs_field else None
         colour = None if self.reference is None else self.reference.colour
-        images = make_variants(rgb, choice, self.size, colour, self.variants)
+        images = make_variants(rgb, choice, self.size, colour, self.variants, self.sage_colour, self.placement)
         stack = torch.from_numpy(np.stack([images[name] for name in self.variants])).permute(0, 3, 1, 2)
         return (stack - self.mean) / self.std, index
 

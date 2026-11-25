@@ -237,7 +237,7 @@ def main() -> int:
     weights_url = ResNet50_Weights.IMAGENET1K_V1.url
     weights_path = hub_checkpoint(weights_url)
     summary = {
-        "recipe": args.recipe, "seed": seed, "epochs": epochs, "settings": spec,
+        "recipe": args.recipe, "seed": seed, "epochs": epochs, "settings": {**spec, "epochs": epochs},
         "hk_train_images": len(train_rows), "hk_selection_images": len(select_rows),
         "best_epoch": best_epoch, "best_selection_weighted_f1": round(best_f1, 4),
         "selection_at_best_epoch": next((row for row in history if row["epoch"] == best_epoch), None),

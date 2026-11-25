@@ -4,8 +4,14 @@ Writes <out-dir>/<dataset>/<backbone>/<variant>.npz with `features` and `ids`, a
 record (versions, weights, timings) to features_run.json. Existing files are skipped unless
 --overwrite, so an interrupted run can simply be restarted.
 
+Besides the four pre-registered variants, the exploratory inputs of src/sage_shift/preprocess.py
+can be requested. colour_global and fov_colour_global are made for SAGE only and need
+--colour-global (scripts/16_colour_global_stats.py); sageify and sageify_grey are made for
+HyperKvasir only. Choose the dataset with --datasets.
+
     python scripts/06_extract_features.py --variants raw --out-dir <folder>
     python scripts/06_extract_features.py --random-weights --limit 8    # quick offline test
+    python scripts/06_extract_features.py --datasets hk --variants sageify sageify_grey --out-dir <folder>
 """
 
 from __future__ import annotations
@@ -21,11 +27,13 @@ import numpy as np
 import torch
 
 from sage_shift.backbones import BACKBONES, load_backbone
+from sage_shift.colour import ColourReference
 from sage_shift.data import read_json
 from sage_shift.features import FrameDataset, extract, save_features
 from sage_shift.frames import hk_frames, sage_frames
 from sage_shift.outdir import check_out_dir
-from sage_shift.preprocess import FIELD_VARIANTS, COLOUR_VARIANTS, PreprocessReference, check_variants
+from sage_shift.preprocess import (EXPLORATORY, GLOBAL_COLOUR, NEEDS_COLOUR, NEEDS_FIELD, SAGEIFY,
+                                   PreprocessReference, check_dataset, check_variants, sage_placement)
 from sage_shift.runinfo import environment, git_state
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,13 +42,18 @@ DEFAULT_BACKBONES = ["resnet50_imagenet", "resnet50_dino_imagenet", "dinov2_vitb
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Extract frozen-backbone features (raw, fov, colour, fov_colour).")
+    parser = argparse.ArgumentParser(description="Extract frozen-backbone features (raw, fov, colour, fov_colour "
+                                                 "and the exploratory inputs).")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
     parser.add_argument("--hk-root", type=Path, default=HK_DIR / "labeled-images")
     parser.add_argument("--hk-split", type=Path, default=HK_DIR / "official_splits" / "2_fold_split.csv")
     parser.add_argument("--datasets", nargs="+", choices=["sage", "hk"],
                         help="default: sage, plus hk when --hk-root holds image-labels.csv")
-    parser.add_argument("--variants", nargs="+", default=["raw"], help="raw fov colour fov_colour")
+    parser.add_argument("--variants", nargs="+", default=["raw"],
+                        help="raw fov colour fov_colour; exploratory: " + " ".join(EXPLORATORY))
+    parser.add_argument("--colour-global", type=Path,
+                        default=ROOT / "outputs" / "preprocess" / "colour_global_sage.json",
+                        help="SAGE train Lab statistics from scripts/16_colour_global_stats.py (colour_global inputs)")
     parser.add_argument("--backbones", nargs="+", choices=BACKBONES,
                         help=f"default: {' '.join(DEFAULT_BACKBONES)}, plus resnet50_gastronet_dino with --gastronet-weights")
     parser.add_argument("--gastronet-weights", type=Path, help="local GastroNet-5M DINOv1 ResNet-50 checkpoint")
@@ -68,16 +81,39 @@ def main() -> int:
     if args.random_weights and args.out_dir is not None and args.limit is None:
         raise SystemExit("--random-weights is for smoke tests: use it with --limit")
     names = args.backbones or DEFAULT_BACKBONES + (["resnet50_gastronet_dino"] if args.gastronet_weights else [])
+    datasets = args.datasets or (["sage"] + (["hk"] if (args.hk_root / "image-labels.csv").is_file() else []))
+    for dataset in datasets:
+        try:
+            check_dataset(dataset, variants)
+        except ValueError as error:
+            raise SystemExit(f"{error}. Choose the dataset with --datasets.") from None
     reference = None
-    if FIELD_VARIANTS & set(variants):
+    if NEEDS_FIELD & set(variants):
         if not args.reference.is_file():
             raise SystemExit(f"{args.reference} not found: run scripts/05_check_fov.py first")
         reference = PreprocessReference.load(args.reference)
-        if COLOUR_VARIANTS & set(variants) and reference.colour is None:
+        if NEEDS_COLOUR & set(variants) and reference.colour is None:
             raise SystemExit("the colour variants need a colour reference: run scripts/05_check_fov.py with HyperKvasir")
         if reference.size != int(cfg["image"]["size"]):
             raise SystemExit(f"reference size {reference.size} differs from the config ({cfg['image']['size']})")
-    datasets = args.datasets or (["sage"] + (["hk"] if (args.hk_root / "image-labels.csv").is_file() else []))
+    sage_colour, extra = None, {}
+    if GLOBAL_COLOUR & set(variants):
+        if not args.colour_global.is_file():
+            raise SystemExit(f"{args.colour_global} not found: run scripts/16_colour_global_stats.py first")
+        stats = read_json(args.colour_global)
+        sage_colour = ColourReference.from_dict(stats)
+        target = stats.get("target")
+        if target is not None and not (np.allclose(target["mean"], reference.colour.mean)
+                                       and np.allclose(target["std"], reference.colour.std)):
+            raise SystemExit(f"{args.colour_global.name} was written for another colour reference than {args.reference}")
+        extra["colour_global"] = {"file": args.colour_global.name, "mean": stats["mean"], "std": stats["std"],
+                                  "images": stats["images"]}
+    if SAGEIFY & set(variants):
+        placement = sage_placement(reference)
+        expected = cfg["exploratory"]["sageify_placement"]
+        if list(placement.shape) != expected["frame"] or list(placement.bbox) != expected["bbox"]:
+            raise SystemExit(f"the most common SAGE layout ({placement}) differs from the config ({expected})")
+        extra["sageify_placement"] = {"frame": list(placement.shape), "bbox": list(placement.bbox)}
     device = torch.device(("cuda" if torch.cuda.is_available() else "cpu") if args.device == "auto" else args.device)
     torch.manual_seed(int(cfg["seeds"]["global"]))
     torch.backends.cudnn.benchmark = False
@@ -85,7 +121,8 @@ def main() -> int:
     started = time.time()
     record: dict[str, Any] = {"started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                               "args": {key: str(value) for key, value in vars(args).items()},
-                              "environment": environment(device), "git": git_state(ROOT), "backbones": {}, "outputs": []}
+                              "environment": environment(device), "git": git_state(ROOT), "backbones": {}, "outputs": [],
+                              **extra}
     print(f"Device: {device}; datasets: {datasets}; variants: {list(variants)}; backbones: {names}")
     backbones = []
     for name in names:
@@ -104,7 +141,8 @@ def main() -> int:
             print(f"{dataset}: all requested files exist; skipped (use --overwrite to redo)")
             continue
         tick = time.time()
-        loader_set = FrameDataset(frames["path"].tolist(), dataset, variants, reference, int(cfg["image"]["size"]))
+        loader_set = FrameDataset(frames["path"].tolist(), dataset, variants, reference, int(cfg["image"]["size"]),
+                                  sage_colour)
         features = extract(loader_set, todo, device, args.batch_size, args.workers)
         seconds = round(time.time() - tick, 1)
         for (name, variant), values in features.items():

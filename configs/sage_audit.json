@@ -1,7 +1,7 @@
 {
   "_notes": [
     "Reference values for scripts/01_audit_sage.py.",
-    "`expected` and `paper_figure3_counts` are the SAGE paper's figures (Oli et al., MELBA 2026) as quoted in the thesis brief. They are compared with the files and never used to change them.",
+    "`expected` and `paper_figure3_counts` are the figures reported in the SAGE paper (Oli et al., MELBA 2026). They are compared with the files and never used to change them.",
     "`class_suffixes` and `label_groups` are analysis aids chosen for this audit; they are not part of the dataset.",
     "`paper_tolerance_pct_points` is how far a coverage percentage may sit from the paper's rounded figure before it is listed as a discrepancy."
   ],

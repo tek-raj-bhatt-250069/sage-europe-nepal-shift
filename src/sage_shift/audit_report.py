@@ -391,7 +391,7 @@ def render_report(audit: Audit, cfg: dict[str, Any]) -> str:
         *_labels(audit, cfg),
         *_class_column(audit),
         *_text(audit, cfg),
-        "## Discrepancies with the paper or the brief",
+        "## Discrepancies with the paper or the README",
         "",
         *(f"{i}. {text}" for i, text in enumerate(audit.discrepancies, start=1)),
         "",
