@@ -10,6 +10,9 @@
     f5_causal_diagram    conceptual diagram of the site factors and where each intervention acts (no data)
     f6_loo_influence     leave-one-patient-out influence on the headline gaps, when
                          outputs/sensitivity/loo_influence.csv exists
+    f7_geometry_controls re-trained fine-tuned models under the geometry inputs: top-class share on SAGE
+                         and HyperKvasir frames placed into SAGE's layout, when
+                         outputs/exploratory_gpu/geometry_table.csv exists
 
 Figures never show dataset images, IDs or patient codes. Optional inputs that are missing are skipped.
 
@@ -54,6 +57,11 @@ LOO_COLUMNS = ["backbone_or_run", "variant", "quantity", "patient_group", "n_ima
 HEADLINE_GAPS = {"gap_macro_f1": f"Transfer gap: {REFERENCE} − transfer (macro-F1)",
                  "macro_f1_difference": "Exploratory: test-time field crop − raw frames (macro-F1)"}
 PROBE_VARIANTS = ("raw", "fov", "colour", "fov_colour")
+GEOMETRY_COLUMNS = ["section", "model", "row", "metric", "estimate", "ci_low", "ci_high"]
+SAGE_GEOMETRY = {"raw": "raw\nframe", "masked": "masked\n(black)", "masked_grey": "masked\n(grey)",
+                 "letterbox": "letterbox\n(black)", "letterbox_grey": "letterbox\n(grey)",
+                 "fov": "field crop\n(black)", "fov_grey": "field crop\n(grey)"}
+HK_GEOMETRY = {"raw": "raw\nframe", "sageify": "SAGE\nlayout\n(black)", "sageify_grey": "SAGE\nlayout\n(grey)"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -456,6 +464,45 @@ def f6_loo_influence(loo: pd.DataFrame, out_dir: Path) -> None:
     save(fig, out_dir, "f6_loo_influence")
 
 
+def f7_geometry_controls(table: pd.DataFrame, collapse: float, out_dir: Path) -> None:
+    """Kept re-runs under the geometry inputs: SAGE top-class share and the HyperKvasir counterfactual."""
+    panels = (("finetuned_sage", "top_class_share", SAGE_GEOMETRY, "Top-class share of predictions",
+               "SAGE six-class test (158 images)"),
+              ("finetuned_hk", "upper_gi_polyp_or_rectum_share", HK_GEOMETRY, "Share predicted polyp or rectum",
+               "HyperKvasir fold 1, upper-GI frames"))
+    fig, axes = plt.subplots(1, 2, figsize=(7.4, 4.0), gridspec_kw={"width_ratios": [7, 3.2]})
+    for ax, (section, metric, inputs, ylabel, title) in zip(axes, panels):
+        rows = table[(table["section"] == section) & (table["metric"] == metric) & table["row"].isin(list(inputs))]
+        tags = sorted(rows["model"].unique(), key=lambda tag: int(str(tag).rsplit("seed", 1)[1]))
+        for k, tag in enumerate(tags):
+            part = rows[rows["model"] == tag].set_index("row").reindex(list(inputs))
+            x = np.arange(len(inputs)) + 0.16 * (k - (len(tags) - 1) / 2)  # seeds side by side
+            ok = part["estimate"].notna().to_numpy()
+            ax.vlines(x[ok], part["ci_low"].to_numpy()[ok], part["ci_high"].to_numpy()[ok], color=SERIES[1],
+                      linewidth=1.0, alpha=0.6)
+            ax.plot(x[ok], part["estimate"].to_numpy()[ok], "o", color=SERIES[1], markersize=5,
+                    markeredgecolor="white", markeredgewidth=1.0, linestyle="none")
+        ax.set_xticks(range(len(inputs)), list(inputs.values()), fontsize=7.5)
+        ax.set_xlim(-0.5, len(inputs) - 0.5)
+        ax.set_ylim(0, 1.04)
+        ax.grid(axis="y")
+        ax.set_axisbelow(True)
+        ax.set_ylabel(f"{ylabel} (95% CI)")
+        ax.set_title(title, loc="left")
+    axes[0].axhline(collapse, color=MUTED, linewidth=0.8)
+    axes[0].text(len(SAGE_GEOMETRY) - 0.55, collapse - 0.02, f"collapse: top class ≥ {collapse:.0%}", fontsize=7,
+                 color=MUTED, ha="right", va="top")
+    fig.suptitle("Exploratory: re-trained adjusted models under geometry controls, specified before they were run",
+                 x=0.01, ha="left", fontsize=9.5, color=INK)
+    fig.tight_layout(rect=(0, 0.17, 1, 0.97))
+    note(fig, "Each dot is one training seed (0, 1, 2 from left to right). The models were trained on raw HyperKvasir "
+              "frames; inputs were changed at test time only.\nBlack or grey: the area outside the endoscopic field. "
+              "Letterbox: field crop padded to a square without distortion; field crop: squashed to a square.\n"
+              "SAGE layout: HyperKvasir's picture placed into SAGE's most common field box on a 768 × 576 canvas.\n"
+              "Intervals: patient-level bootstrap on SAGE, image-level on HyperKvasir (no patient identifiers).", 0.12)
+    save(fig, out_dir, "f7_geometry_controls")
+
+
 def main() -> int:
     args = parse_args()
     check_out_dir(args.out_dir, ROOT / "data", ROOT)
@@ -477,6 +524,11 @@ def main() -> int:
     loo = optional_table(args.outputs / "sensitivity" / "loo_influence.csv", LOO_COLUMNS)
     if loo is not None:
         f6_loo_influence(loo, args.out_dir)
+    geometry = optional_table(args.outputs / "exploratory_gpu" / "geometry_table.csv", GEOMETRY_COLUMNS)
+    if geometry is not None:
+        config = json.loads((ROOT / "configs" / "experiment.json").read_text(encoding="utf-8"))
+        collapse = float(config["paper_recipe_rerun"]["collapse_criterion"]["top_class_share_of_predictions"])
+        f7_geometry_controls(geometry, collapse, args.out_dir)
     print(f"Wrote figures to {args.out_dir}")
     return 0
 
