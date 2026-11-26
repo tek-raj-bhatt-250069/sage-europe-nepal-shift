@@ -1,10 +1,8 @@
 # Population or Pipeline?
 
-**Diagnosing and Closing the Europe-to-Nepal Performance Gap in GI Endoscopy with Vision Foundation Models**
+**Diagnosing and Closing the Europe-to-Nepal Performance Gap in Gastrointestinal Endoscopy with Vision Foundation Models**
 
-MSc thesis code (Data Science and Computational Intelligence, Softwarica College; degree awarded by Coventry University).
-
-> Research code only. This is not a clinical or diagnostic tool.
+MSc Data Science and Computational Intelligence, Softwarica College of IT and E-Commerce; degree awarded by Coventry University, UK.
 
 ---
 
@@ -27,7 +25,7 @@ A ResNet-50 trained on HyperKvasir (Norway) has been reported at a weighted F1 o
 
 ## Key Results
 
-All scores are on the SAGE six-class test set: 158 images from 62 patients. Intervals are paired patient-level 95% bootstrap intervals (2,000 resamples). The final analysis code is commit `a1bbef1`.
+All scores are on the SAGE six-class test set: 158 images from 62 patients. Intervals are paired patient-level 95% bootstrap intervals (2,000 resamples).
 
 **1. The published score is a collapse.**
 - 0.1164 is exactly the weighted F1 of predicting "polyp" for every test image, so it is indistinguishable from a constant predictor.
@@ -200,7 +198,7 @@ export SYNAPSE_AUTH_TOKEN=<personal access token>
 python scripts/00_download_sage.py
 ```
 
-HyperKvasir is downloaded separately from [datasets.simula.no](https://datasets.simula.no/hyper-kvasir/). The official split files come from [simula/hyper-kvasir](https://github.com/simula/hyper-kvasir) at commit `21cc366`.
+HyperKvasir is downloaded separately from [datasets.simula.no](https://datasets.simula.no/hyper-kvasir/). The official split files come from [simula/hyper-kvasir](https://github.com/simula/hyper-kvasir).
 
 ```
 external/hyperkvasir/
@@ -265,7 +263,7 @@ If you use this code, please cite the thesis and both datasets.
 @mastersthesis{bhatt2026population,
   author = {Bhatt, Tek Raj},
   title  = {Population or Pipeline? Diagnosing and Closing the Europe-to-Nepal Performance Gap
-            in GI Endoscopy with Vision Foundation Models},
+            in Gastrointestinal Endoscopy with Vision Foundation Models},
   school = {Coventry University (Softwarica College of IT and E-Commerce)},
   type   = {MSc thesis, Data Science and Computational Intelligence},
   year   = {2026}
