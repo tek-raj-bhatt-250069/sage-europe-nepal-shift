@@ -145,7 +145,7 @@ The shared label space has six classes: esophagitis, fundus-retroflexion, polyp,
 .
 ├── configs/            experiment.json (label space, seeds, C grid, expected counts); sage_audit.json
 ├── figures/            figures shown in this README (copies of outputs/figures/)
-├── notebooks/          placeholder; all steps run as scripts
+├── notebooks/          sage_features.ipynb: the Colab notebook that ran the GPU steps (scripts 06, 08, 14)
 ├── scripts/            numbered entry points, one per pipeline stage (below)
 ├── src/sage_shift/     package: data access, label space, field-of-view and colour preprocessing,
 │                       backbones, probes, bootstrap, metrics, recipe re-run, analyses
@@ -206,7 +206,7 @@ external/hyperkvasir/
 └── labeled-images/    the labelled-images archive, extracted (image-labels.csv + image folders)
 ```
 
-**Pipeline.** The GPU steps ran on Google Colab, on a Tesla T4. Script 01 exits non-zero if train and test share a patient or visit, and script 03 exits non-zero if any count differs from `configs/experiment.json`.
+**Pipeline.** The GPU steps ran on Google Colab, on a Tesla T4 (cells in `notebooks/sage_features.ipynb`; it reads the GitHub and Synapse tokens from Colab Secrets). Script 01 exits non-zero if train and test share a patient or visit, and script 03 exits non-zero if any count differs from `configs/experiment.json`.
 
 ```bash
 # Data and preprocessing (CPU)
