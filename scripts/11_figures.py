@@ -41,7 +41,7 @@ from sage_shift.labelspace import MEANING_GROUP, SIX_CLASSES  # noqa: E402
 from sage_shift.outdir import check_out_dir  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-SERIES = ["#2a78d6", "#eb6834", "#1baf7a"]  # categorical slots 1-3 (validated all-pairs)
+SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#f2a600"]  # categorical slots 1-4 (slots 1-3 validated all-pairs; 1-4 adjacent)
 BLUES = ["#fcfcfb", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 INK, INK_2, MUTED, GRID, AXIS = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 BAND = "#efeee9"  # target zone in F3 and diagram boxes, one step off the surface
@@ -50,6 +50,7 @@ SHORT = {"esophagitis": "Esophagitis", "fundus-retroflexion": "Fundus (retrofl.)
 BACKBONE_NAMES = {"resnet50_imagenet": "ResNet-50 ImageNet", "resnet50_dino_imagenet": "ResNet-50 DINO",
                   "resnet50_gastronet_dino": "ResNet-50 GastroNet", "dinov2_vitb14": "DINOv2 ViT-B/14"}
 REFERENCE = "SAGE-only reference"  # the SAGE-trained probe (files and columns call it the ceiling)
+SLOT = {"resnet50_imagenet": 0, "resnet50_dino_imagenet": 1, "dinov2_vitb14": 2, "resnet50_gastronet_dino": 3}  # colour follows the backbone
 FOV_TEST_TIME = "Exploratory: test-time field crop of SAGE"
 INPUTS = {"raw": "raw frame", "masked": "masked\n(border blacked out,\nnot cropped)", "fov": "test-time\nfield crop"}
 AUROC_COLUMNS = ["backbone", "variant", "regime", "k", "auroc_mean", "ci_low", "ci_high", "draws"]
@@ -180,17 +181,18 @@ def f2_class_gaps(table: pd.DataFrame, test: pd.DataFrame, out_dir: Path) -> Non
     gaps = table[(table["section"] == "meaning_groups") & (table["row"] == "raw") & table["metric"].str.startswith("f1_gap_")]
     order = [c for c in SIX_CLASSES if MEANING_GROUP[c] == "shifted"] + [c for c in SIX_CLASSES if MEANING_GROUP[c] == "matched"]
     n_images, n_patients = test["class"].value_counts(), test.groupby("class")["patient_group"].nunique()
-    backbones = [b for b in BACKBONE_NAMES if b in set(gaps["model"])]
+    backbones = sorted((b for b in BACKBONE_NAMES if b in set(gaps["model"])), key=SLOT.get)  # drawn in colour-slot order
     fig, ax = plt.subplots(figsize=(6.4, 4.6))
     offsets = np.linspace(-0.22, 0.22, len(backbones))
-    for b, (backbone, offset) in enumerate(zip(backbones, offsets)):
+    for backbone, offset in zip(backbones, offsets):
+        colour = SERIES[SLOT[backbone]]
         part = gaps[gaps["model"] == backbone].set_index("metric")
         ys = np.arange(len(order)) + offset
         est = [part.loc[f"f1_gap_{c}", "estimate"] for c in order]
         low = [part.loc[f"f1_gap_{c}", "ci_low"] for c in order]
         high = [part.loc[f"f1_gap_{c}", "ci_high"] for c in order]
-        ax.hlines(ys, low, high, color=SERIES[b], linewidth=1.4)
-        ax.plot(est, ys, "o", color=SERIES[b], markersize=5, markeredgecolor="white", markeredgewidth=1.0,
+        ax.hlines(ys, low, high, color=colour, linewidth=1.4)
+        ax.plot(est, ys, "o", color=colour, markersize=5, markeredgecolor="white", markeredgewidth=1.0,
                 label=BACKBONE_NAMES[backbone])
     ax.axvline(0, color=AXIS, linewidth=0.8)
     n_shifted = sum(MEANING_GROUP[c] == "shifted" for c in order)
@@ -202,7 +204,7 @@ def f2_class_gaps(table: pd.DataFrame, test: pd.DataFrame, out_dir: Path) -> Non
     ax.grid(axis="x")
     ax.set_axisbelow(True)
     ax.set_xlabel(f"{REFERENCE} − transfer (F1)")
-    ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.01), ncol=len(backbones), fontsize=7.5, handletextpad=0.3,
+    ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.01), ncol=len(backbones) if len(backbones) <= 3 else 2, fontsize=7.5, handletextpad=0.3,
               borderaxespad=0)
     fig.suptitle("Descriptive: per-class transfer gap on raw frames, by meaning group", x=0.01, ha="left",
                  fontsize=9.5, color=INK)

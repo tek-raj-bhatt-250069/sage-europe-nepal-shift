@@ -46,27 +46,29 @@ All scores are on the SAGE six-class test set: 158 images from 62 patients. Inte
 </p>
 <p align="center"><em>Figure 1. Re-trained adjusted models (three seeds) under geometry controls. Left: SAGE test inputs. Every input with a margin around the field crosses the 80% collapse threshold, and the field crops do not. Right: HyperKvasir fold-1 upper-GI frames, as originally framed and placed into SAGE's layout.</em></p>
 
-**3. A fair gap remains for frozen features, and it is smaller with foundation models.** Macro-F1:
+**3. A fair gap remains for frozen features; it is smallest with in-domain pretraining.** Macro-F1:
 
 | Backbone (frozen) | Transfer: HyperKvasir → SAGE | SAGE-only reference | Gap, raw frames | Gap, field crop |
 |---|---:|---:|---:|---:|
 | ResNet-50 (ImageNet) | 0.240 | 0.716 | 0.476 [0.311, 0.641] | 0.397 [0.241, 0.520] |
 | ResNet-50 (DINO) | 0.360 | 0.788 | 0.428 [0.247, 0.554] | 0.281 [0.160, 0.378] |
 | DINOv2 ViT-B/14 | 0.507 | 0.740 | 0.233 [0.092, 0.353] | 0.118 [0.018, 0.208] |
+| ResNet-50 (DINO, GastroNet-5M endoscopy images) | 0.746 | 0.880 | 0.135 [0.045, 0.212] | 0.148 [0.043, 0.241] |
 
-<sub>For context: the best constant predictor scores 0.088. HyperKvasir in-domain macro-F1 is 0.92–0.93, but that figure is optimistic, because HyperKvasir has no patient identifiers and its split is image-level.</sub>
+<sub>For context: the best constant predictor scores 0.088. HyperKvasir in-domain macro-F1 is 0.92–0.95, but that figure is optimistic, because HyperKvasir has no patient identifiers and its split is image-level.</sub>
 
-- **Field crop.** It reduces the gap more than colour normalisation does, for every backbone (estimated reduction 0.08–0.15).
+- **Field crop.** For the three general-purpose backbones it reduces the gap more than colour normalisation does (estimated reduction 0.08–0.15). For the in-domain backbone neither intervention changes the gap (−0.013 and −0.008), and its predictions are not polyp-heavy even on raw frames.
 - **Colour.** Per-image colour normalisation shows no detectable change, and neither does a dataset-level colour map.
-- **Class priors.** EM prior correction widens the gap. Even the true SAGE class priors do not materially improve macro-F1 (−0.057 to +0.003).
+- **Class priors.** EM prior correction widens the gap. Even the true SAGE class priors do not materially improve macro-F1 (−0.057 to +0.010).
 
 **4. A few Nepali patients go a long way.**
 - With HyperKvasir data, a DINOv2 probe reaches 90% of the SAGE-only reference with 10–20 Nepali patients (5–10 on cropped, colour-normalised frames).
 - At five patients it leads a Nepali-only probe by +0.36 [0.28, 0.42] (exploratory interval).
-- Most of that gain is an operating-point correction: refitting only the six class intercepts recovers 65–132% of it (exploratory).
+- For the general-purpose backbones most of that gain is an operating-point correction: refitting only the six class intercepts recovers 65–132% of it (exploratory).
+- With in-domain GastroNet-5M features, HyperKvasir data alone give 0.746 on SAGE, and 20 Nepali patients reach 90% of that backbone's higher SAGE-only reference (0.880).
 
 <p align="center">
-  <img src="figures/f3_label_efficiency.png" width="640" alt="Macro-F1 and macro-AUROC against the number of Nepali training patients, with and without HyperKvasir, for three backbones">
+  <img src="figures/f3_label_efficiency.png" width="640" alt="Macro-F1 and macro-AUROC against the number of Nepali training patients, with and without HyperKvasir, for four backbones">
 </p>
 <p align="center"><em>Figure 2. Label efficiency (RQ3). HyperKvasir + k Nepali patients (blue) against Nepali patients only (orange). Lines are means over 10 patient draws, bands are 95% test-patient bootstrap intervals, and the grey band is 90–100% of the SAGE-only reference.</em></p>
 
@@ -75,14 +77,15 @@ All scores are on the SAGE six-class test set: 158 images from 62 patients. Inte
 | | Hypothesis | Verdict |
 |---|---|---|
 | H1 | The released recipe gives near-constant predictions on SAGE | **Supported** (three seeds) |
-| H2 | HyperKvasir probes beat constant predictors, yet a gap to the SAGE-only reference remains | **Supported** in 12/12 backbone × variant cells (two cells are not robust to patient weighting) |
+| H2 | HyperKvasir probes beat constant predictors, yet a gap to the SAGE-only reference remains | **Supported** in 16/16 backbone × variant cells (three cells are not robust to patient weighting) |
 | H3 | The gap is larger for classes whose definitions differ (polyp, pylorus) | Not supported (under-powered) |
-| H4 | The field crop and colour normalisation each shrink the gap for the ImageNet ResNet-50 | Not supported (under-powered); the in-domain comparison was not tested |
-| H5 | With HyperKvasir data, ≤ 20 Nepali patients reach 90% of the SAGE-only reference | **Supported** (DINOv2) |
+| H4 | The field crop and colour normalisation each shrink the gap for the ImageNet ResNet-50 | Not supported (under-powered). Its in-domain clause holds: neither intervention reduces the gap for the in-domain backbone |
+| H5 | With HyperKvasir data, ≤ 20 Nepali patients reach 90% of the SAGE-only reference | **Supported** (DINOv2; in-domain ResNet-50 on raw frames) |
 
 **Interpretation.**
 - On these curated single-hospital images, the collapse follows the frame layout, which is a pipeline property.
 - The gap that remains after the crop (0.12–0.40) is a site effect whose cause is unresolved. With one Nepali hospital, population differences cannot be separated from other site differences.
+- In-domain pretraining on European endoscopy images (GastroNet-5M, Dutch hospitals) narrows the gap most: 0.135 on raw frames, with no pipeline intervention.
 
 ---
 
@@ -110,7 +113,8 @@ The shared label space has six classes: esophagitis, fundus-retroflexion, polyp,
 - **Frozen backbones:**
   - ResNet-50 (torchvision, ImageNet-1k V1);
   - ResNet-50 DINO;
-  - DINOv2 ViT-B/14 (class token plus mean patch token, 1,536-d).
+  - DINOv2 ViT-B/14 (class token plus mean patch token, 1,536-d);
+  - ResNet-50 trained with DINO on GastroNet-5M (in-domain; weights under CC BY-NC-ND 4.0 from the GastroNet portal, used frozen and not redistributed).
 - **Probes:** multinomial logistic regression (L2 penalty, class-balanced, standardised features).
   - C ∈ {0.001, …, 10} is chosen on HyperKvasir's official folds for the transfer probe, and by 5-fold patient-grouped cross-validation on SAGE train for the SAGE-only reference.
   - No choice is made on SAGE test results.
@@ -216,6 +220,8 @@ python scripts/16_colour_global_stats.py
 
 # Features and fine-tuning (GPU)
 python scripts/06_extract_features.py --variants raw fov colour fov_colour
+python scripts/06_extract_features.py --backbones resnet50_gastronet_dino --gastronet-weights <RN50_GastroNet-5M_DINOv1.pth> \
+    --variants raw fov colour fov_colour
 python scripts/06_extract_features.py --datasets sage --colour-global outputs/preprocess/colour_global_sage.json \
     --variants masked masked_grey letterbox letterbox_grey fov_grey colour_global fov_colour_global
 python scripts/06_extract_features.py --datasets hk --variants sageify sageify_grey
@@ -287,9 +293,10 @@ If you use this code, please cite the thesis and both datasets.
 }
 ```
 
-**Methods used.** The backbones come from three papers:
+**Methods used.** The backbones come from these papers:
 - ResNet: He et al., CVPR 2016.
 - DINO: Caron et al., ICCV 2021.
 - DINOv2: Oquab et al., TMLR 2024.
+- GastroNet-5M: Jong et al., *Gastroenterology* 2026; ResNet-50 pretraining on it: Boers et al., *Medical Image Analysis* 2024.
 
 The colour normalisation follows Reinhard et al., *IEEE Computer Graphics and Applications*, 2001. The SAGE dataset code is at <https://github.com/bhattarailab/SAGE>.
