@@ -19,7 +19,7 @@ A ResNet-50 trained on HyperKvasir (Norway) has been reported at a weighted F1 o
 | **RQ2** | What causes it? | Controlled interventions (field-of-view crop, colour normalisation, class-prior correction, label-meaning groups) and a re-run of the published fine-tuning recipe |
 | **RQ3** | How much Nepali data closes it? | Label-efficiency curves over *k* Nepali training patients, with and without HyperKvasir |
 
-**Pre-registration.** Five hypotheses (H1–H5) and their decision rules were fixed before any model was trained. Analyses added later are labelled **post hoc** (sensitivity) or **exploratory**, and each was specified before it was run.
+**Pre-registration.** Five hypotheses and their decision rules were fixed before any model was trained; the thesis groups them under the three research questions as H1 (H1a, H1b), H2 (H2a, H2b) and H3, with wording and rules unchanged. Analyses added later are labelled **post hoc** (sensitivity) or **exploratory**, and each was specified before it was run.
 
 ---
 
@@ -74,11 +74,13 @@ All scores are on the SAGE six-class test set: 158 images from 62 patients. Inte
 
 | | Hypothesis | Verdict |
 |---|---|---|
-| H1 | The released recipe gives near-constant predictions on SAGE | **Supported** (three seeds) |
-| H2 | HyperKvasir probes beat constant predictors, yet a gap to the SAGE-only reference remains | **Supported** in 16/16 backbone × variant cells (three cells are not robust to patient weighting) |
-| H3 | The gap is larger for classes whose definitions differ (polyp, pylorus) | Not supported (under-powered) |
-| H4 | The field crop and colour normalisation each shrink the gap for the ImageNet ResNet-50 | Not supported (under-powered). Its in-domain clause holds: neither intervention reduces the gap for the in-domain backbone |
-| H5 | With HyperKvasir data, ≤ 20 Nepali patients reach 90% of the SAGE-only reference | **Supported** (DINOv2; in-domain ResNet-50 on raw frames) |
+| H1a (RQ1) | The released recipe gives near-constant predictions on SAGE | **Supported** (three seeds) |
+| H1b (RQ1) | HyperKvasir probes beat constant predictors, yet a gap to the SAGE-only reference remains | **Supported** in 16/16 backbone × variant cells (three cells are not robust to patient weighting) |
+| H2a (RQ2) | The gap is larger for classes whose definitions differ (polyp, pylorus) | Not supported (under-powered) |
+| H2b (RQ2) | The field crop and colour normalisation each shrink the gap for the ImageNet ResNet-50 | Not supported (under-powered). Its in-domain clause holds: neither intervention reduces the gap for the in-domain backbone |
+| H3 (RQ3) | With HyperKvasir data, ≤ 20 Nepali patients reach 90% of the SAGE-only reference | **Supported** (DINOv2; in-domain ResNet-50 on raw frames) |
+
+So H1 and H3 are supported and H2 is not. The labels H1a–H3 correspond to the registered H1–H5 in order.
 
 **Interpretation.**
 - On these curated single-hospital images, the collapse follows the frame layout, which is a pipeline property.
